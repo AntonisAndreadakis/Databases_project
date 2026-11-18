@@ -3,6 +3,7 @@ Report.pdf
 
 # Μεταγλωττισμένα αρχεία Java
 bin/
+target/
 *.class
 
 # Μεταδεδομένα IDE (Eclipse, IntelliJ, VS Code)
