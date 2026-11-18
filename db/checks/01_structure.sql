@@ -32,7 +32,7 @@ WHERE con.connamespace = 'public'::regnamespace AND con.contype IN ('p', 'u')
 ORDER BY rel.relname, con.contype, con.conname;
 
 \echo
-\echo === 4. Ξένα κλειδιά (αναμένονται 25) ===
+\echo === 4. Ξένα κλειδιά (αναμένονται 25, ή 24 μετά τις διορθώσεις) ===
 SELECT rel.relname AS table_name, con.conname AS constraint_name,
        pg_get_constraintdef(con.oid) AS definition
 FROM pg_constraint AS con
@@ -74,7 +74,7 @@ WHERE schemaname = 'public'
 ORDER BY tablename, indexname;
 
 \echo
-\echo === 9. Συναρτήσεις (αναμένονται 29) ===
+\echo === 9. Συναρτήσεις (αναμένονται 29, ή 38 μετά τις διορθώσεις) ===
 SELECT p.proname AS function_name,
        pg_get_function_identity_arguments(p.oid) AS arguments,
        pg_get_function_result(p.oid) AS returns
@@ -83,7 +83,7 @@ WHERE p.pronamespace = 'public'::regnamespace
 ORDER BY p.proname;
 
 \echo
-\echo === 10. Triggers (αναμένονται 9) ===
+\echo === 10. Triggers (αναμένονται 9, ή 11 μετά τις διορθώσεις) ===
 SELECT rel.relname AS table_name, tg.tgname AS trigger_name,
        pg_get_triggerdef(tg.oid) AS definition
 FROM pg_trigger AS tg
@@ -92,9 +92,9 @@ WHERE NOT tg.tgisinternal AND rel.relnamespace = 'public'::regnamespace
 ORDER BY rel.relname, tg.tgname;
 
 \echo
-\echo === 11. Όψεις (αναμένεται 1) ===
+\echo === 11. Όψεις (αναμένεται 1, ή 2 μετά τις διορθώσεις) ===
 \dv
-SELECT pg_get_viewdef('"6_1_availableRoomsByHotel"'::regclass, true) AS view_definition;
+SELECT viewname, definition FROM pg_views WHERE schemaname = 'public' ORDER BY viewname;
 
 \echo
 \echo === 12. Πλήθος γραμμών ανά πίνακα ===

@@ -40,7 +40,7 @@ SELECT id_hotel, month_value, round(month_fullness, 2) AS month_fullness
 FROM "4_5_find_hotel_fullness"(11, 2021);
 
 \echo
-\echo === 6.1 Όψη διαθέσιμων δωματίων ===
-\echo     (0 γραμμές: η όψη κοιτά μόνο κρατήσεις μετά τη σημερινή ημερομηνία,
-\echo      ενώ τα δεδομένα φτάνουν έως τον Μάιο του 2022)
+\echo === 6.1 Όψη διαθέσιμων δωματίων: πλήθος γραμμών ===
+\echo     Αρχική παράδοση: 0 (ήθελε μελλοντική κράτηση, και τα δεδομένα φτάνουν έως 05/2022).
+\echo     Μετά το db/fixes/apply.sql: 2034 (όλα τα δωμάτια είναι ελεύθερα σήμερα).
 SELECT count(*) AS rows_in_view FROM "6_1_availableRoomsByHotel";
