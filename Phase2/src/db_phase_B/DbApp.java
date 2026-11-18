@@ -129,7 +129,8 @@ public class DbApp {
 		String sql = "SELECT rb.\"hotelbookingID\", rb.\"roomID\", rb.checkin, rb.checkout, rb.rate "
 				+ "FROM roombooking rb "
 				+ "JOIN room rm ON rm.\"idRoom\" = rb.\"roomID\" "
-				+ "WHERE rm.\"idHotel\" = ? AND rb.\"bookedforpersonID\" = ? "
+				+ "JOIN client cl ON cl.\"idClient\" = rb.\"bookedforpersonID\" "
+				+ "WHERE rm.\"idHotel\" = ? AND cl.\"idClient\" = ? "
 				+ "ORDER BY rb.\"hotelbookingID\", rb.\"roomID\"";
 		List<RoomBooking> bookings = new ArrayList<>();
 		try (PreparedStatement st = conn.prepareStatement(sql)) {
@@ -148,7 +149,7 @@ public class DbApp {
 		}
 		conn.commit();
 		if (bookings.isEmpty()) {
-			System.out.println("This client has no room bookings in this hotel.");
+			System.out.println("There is no client with this id who has room bookings in this hotel.");
 		}
 		System.out.println(LINE);
 		return bookings;
@@ -270,13 +271,27 @@ public class DbApp {
 		System.out.println("0) Back to the main menu");
 	}
 
-	private void hotelMenu(int hotelId) throws SQLException {
+	/** Shows the hotel menu until the user goes back. A database error only cancels the current action. */
+	private void hotelMenu(int hotelId) {
 		while (true) {
 			printHotelMenu();
 			int choice = reader.readIntInRange("Choose: ", 0, 3);
 			if (choice == 0) {
 				return;
 			}
+			try {
+				if (hotelAction(hotelId, choice)) {
+					return;
+				}
+			} catch (SQLException e) {
+				reportAndRollback(e);
+			}
+		}
+	}
+
+	/** Runs one action of the hotel menu. Returns true when the user asked for the main menu. */
+	private boolean hotelAction(int hotelId, int choice) throws SQLException {
+		{
 			if (choice == 1) {
 				String prefix = reader.readString("Client last name prefix: ");
 				searchClients(hotelId, prefix);
@@ -284,17 +299,17 @@ public class DbApp {
 				int clientId = reader.readNonNegativeInt("Client id: ");
 				List<RoomBooking> bookings = displayRoomBookings(hotelId, clientId);
 				if (bookings.isEmpty()) {
-					continue;
+					return false;
 				}
 				int number = reader.readIntInRange("Number of the booking to update (0 to go back to the main menu): ", 0, bookings.size());
 				if (number == 0) {
-					return;
+					return true;
 				}
 				LocalDate checkin = reader.readDate("New checkin (year-month-day): ");
 				LocalDate checkout = reader.readDate("New checkout (year-month-day): ");
 				if (!checkout.isAfter(checkin)) {
 					System.out.println("The checkout must be after the checkin.");
-					continue;
+					return false;
 				}
 				BigDecimal rate = reader.readAmount("New room rate: ");
 				updateRoomBooking(bookings.get(number - 1), checkin, checkout, rate);
@@ -303,23 +318,37 @@ public class DbApp {
 				LocalDate checkout = reader.readDate("Checkout (year-month-day): ");
 				if (!checkout.isAfter(checkin)) {
 					System.out.println("The checkout must be after the checkin.");
-					continue;
+					return false;
+				}
+				if (checkin.isBefore(LocalDate.now())) {
+					System.out.println("The checkin cannot be in the past.");
+					return false;
 				}
 				List<FreeRoom> rooms = displayAvailableRooms(hotelId, checkin, checkout);
 				if (rooms.isEmpty()) {
-					continue;
+					return false;
 				}
 				int number = reader.readIntInRange("Number of the room to book (0 to cancel): ", 0, rooms.size());
 				if (number == 0) {
-					continue;
+					return false;
 				}
 				int clientId = reader.readNonNegativeInt("Client id: ");
 				insertBooking(rooms.get(number - 1).roomId, clientId, checkin, checkout);
 			}
 		}
+		return false;
 	}
 
-	private void mainMenu() throws SQLException {
+	private void reportAndRollback(SQLException e) {
+		System.out.println("The database refused the request: " + firstLine(e.getMessage()));
+		try {
+			conn.rollback();
+		} catch (SQLException rollbackError) {
+			System.out.println("Problem while cancelling the action: " + firstLine(rollbackError.getMessage()));
+		}
+	}
+
+	private void mainMenu() {
 		while (true) {
 			printMainMenu();
 			int choice = reader.readIntInRange("Choose: ", 1, 2);
@@ -327,7 +356,13 @@ public class DbApp {
 				return;
 			}
 			String prefix = reader.readString("Hotel name prefix: ");
-			List<Integer> hotelIds = searchHotel(prefix);
+			List<Integer> hotelIds;
+			try {
+				hotelIds = searchHotel(prefix);
+			} catch (SQLException e) {
+				reportAndRollback(e);
+				continue;
+			}
 			if (hotelIds.isEmpty()) {
 				continue;
 			}
@@ -360,8 +395,6 @@ public class DbApp {
 			dbapp.mainMenu();
 		} catch (StandardInputRead.EndOfInputException e) {
 			System.out.println();
-		} catch (SQLException e) {
-			System.out.println("Database error: " + e.getMessage());
 		} finally {
 			dbapp.dbClose();
 			System.out.println("----------------------Thanks for using our system!------------------------------");

@@ -20,6 +20,11 @@ public class StandardInputRead {
 
 	/** Prints the message and returns the line typed, trimmed. */
 	public String readString(String message) {
+		return readLine(message).trim();
+	}
+
+	/** Prints the message and returns the line exactly as typed (a password may start or end with a space). */
+	private String readLine(String message) {
 		System.out.print(message);
 		System.out.flush();
 		try {
@@ -28,7 +33,7 @@ public class StandardInputRead {
 				throw new EndOfInputException();
 			}
 			// Windows PowerShell may put a byte-order mark in front of piped input.
-			return line.replace("﻿", "").trim();
+			return line.replace("\uFEFF", "");
 		} catch (IOException e) {
 			throw new EndOfInputException();
 		}
@@ -44,7 +49,7 @@ public class StandardInputRead {
 			}
 			return new String(typed);
 		}
-		return readString(message);
+		return readLine(message);
 	}
 
 	/** Reads an integer that is zero or greater. */
