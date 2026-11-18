@@ -65,6 +65,12 @@ ELSIF action_in = 'delete' THEN
     IF id_client IS NULL THEN
         RAISE EXCEPTION 'There is no client with document client %.', documentclient_in;
     END IF;
+    -- Οι κρατήσεις σβήνονται ρητά πριν από το πρόσωπο. Με σκέτο cascade η σειρά δεν είναι
+    -- εγγυημένη: το trigger που ξαναϋπολογίζει το totalamount μπορεί να ενημερώσει κράτηση της
+    -- οποίας ο πελάτης έχει ήδη σβηστεί, και τότε η διαγραφή αποτυγχάνει με σφάλμα ξένου κλειδιού
+    -- (συμβαίνει όταν η κράτηση δημιουργήθηκε μέσα στην ίδια συναλλαγή).
+    DELETE FROM roombooking rb WHERE rb."bookedforpersonID" = id_client;
+    DELETE FROM hotelbooking hb WHERE hb."bookedbyclientID" = id_client;
     DELETE FROM person p1 WHERE p1."idPerson" = id_client;   -- client και creditcard φεύγουν με cascade
     success = true;
 

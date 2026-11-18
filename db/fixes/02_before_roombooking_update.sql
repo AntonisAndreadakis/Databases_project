@@ -42,7 +42,9 @@ rate_room = (SELECT rr.rate-(rr.rate*rr.discount/100) FROM "roomrate" rr
 				 AND rr.roomtype = (SELECT r."roomtype" FROM "room" r WHERE r."idRoom"=NEW."roomID")));
 
 -- [fix] Το rate δόθηκε ρητά στο UPDATE; Το σημειώνει το trigger before_roombooking_rate_given.
-rate_given = (current_setting('hotel.rate_given', true) = '1');
+-- Το COALESCE χρειάζεται: πριν από το πρώτο UPDATE μιας σύνδεσης η ρύθμιση δεν υπάρχει και το
+-- current_setting επιστρέφει NULL· τότε το rate_given έμενε NULL και το rate δεν ανανεωνόταν.
+rate_given = (COALESCE(current_setting('hotel.rate_given', true), '') = '1');
 PERFORM set_config('hotel.rate_given', '', true);
 
 -- [fix] Οι ημερομηνίες είναι υποχρεωτικές (με NULL όλοι οι έλεγχοι περνούσαν σιωπηλά).
