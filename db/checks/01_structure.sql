@@ -74,7 +74,7 @@ WHERE schemaname = 'public'
 ORDER BY tablename, indexname;
 
 \echo
-\echo === 9. Συναρτήσεις (αναμένονται 29, ή 38 μετά τις διορθώσεις) ===
+\echo === 9. Συναρτήσεις (αναμένονται 29, ή 39 μετά τις διορθώσεις) ===
 SELECT p.proname AS function_name,
        pg_get_function_identity_arguments(p.oid) AS arguments,
        pg_get_function_result(p.oid) AS returns
@@ -83,7 +83,7 @@ WHERE p.pronamespace = 'public'::regnamespace
 ORDER BY p.proname;
 
 \echo
-\echo === 10. Triggers (αναμένονται 9, ή 11 μετά τις διορθώσεις) ===
+\echo === 10. Triggers (αναμένονται 9, ή 12 μετά τις διορθώσεις) ===
 SELECT rel.relname AS table_name, tg.tgname AS trigger_name,
        pg_get_triggerdef(tg.oid) AS definition
 FROM pg_trigger AS tg

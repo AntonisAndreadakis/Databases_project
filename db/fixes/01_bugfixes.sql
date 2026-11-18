@@ -53,7 +53,8 @@ IF action_in = 'insert' THEN
             INSERT INTO creditcard VALUES (cardtype_in, number_card_in, expiration_card_in, holder_in, id_client);
             success = true;
         ELSE
-            RAISE NOTICE 'Card has expired. Need to insert new card. Person Id=%', id_client;
+            -- Πριν ήταν NOTICE: ο πελάτης έμενε στη βάση χωρίς κάρτα και η συνάρτηση γύριζε false.
+            RAISE EXCEPTION 'Card has expired. Need to insert new card. Person Id=%', id_client;
         END IF;
     ELSE
         RAISE EXCEPTION 'Card type or card number cannot be null. Person Id=%', id_client;
@@ -94,10 +95,15 @@ ELSIF action_in = 'update' THEN
                 expiration = expiration_card_in,
                 holder = holder_in
             WHERE "clientID" = id_client;
+            IF NOT FOUND THEN       -- ο πελάτης δεν είχε κάρτα: προστίθεται
+                INSERT INTO creditcard VALUES (cardtype_in, number_card_in, expiration_card_in, holder_in, id_client);
+            END IF;
             success = true;
         ELSE
             RAISE EXCEPTION 'Card has expired. Need to insert new card. Person Id=%', id_client;
         END IF;
+    ELSE
+        success = true;             -- ενημέρωση μόνο των στοιχείων του προσώπου
     END IF;
 
 ELSE
@@ -137,6 +143,9 @@ $$;
 -- 2.2  Έσκαγε για δύο λόγους: τα sequences (βλ. 0) και "FROM person WHERE pe.idPerson"
 --      χωρίς alias. Ο έλεγχος διαθεσιμότητας δεν έπιανε κρατήσεις που αρχίζουν μέσα στο
 --      διάστημα και τελειώνουν μετά· τώρα είναι ο κανονικός έλεγχος επικάλυψης.
+--      Το πλήθος δωματίων και οι ημερομηνίες επιλέγονταν μία φορά για όλες τις κρατήσεις
+--      της κλήσης· τώρα ανά κράτηση, όπως ζητά η εκφώνηση. Αποκλείονται οι υπάλληλοι του
+--      ξενοδοχείου, που η εκφώνηση δεν επιτρέπει ούτε ως πελάτες ούτε ως υπευθύνους.
 --      Το rate και το totalamount τα βάζουν πλέον τα triggers.
 -- ---------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION "2_2_insertRandomBookings"(hotelid integer, start_date date, finish_date date, n integer)
@@ -149,8 +158,6 @@ DECLARE
     random_number_of_rooms integer;
     checkin_date date;
     checkout_date date;
-    reservation_date date;
-    cancellation_date date;
     hotel_bookingid integer;
     country_of_random_bookedbyclient varchar(45);
     random_room_available_from_hotelid integer;
@@ -159,30 +166,36 @@ IF finish_date <= start_date THEN
     RAISE EXCEPTION 'finish_date must be after start_date.';
 END IF;
 
-random_number_of_rooms = floor(random() * 5 + 1)::int;
-
--- Τυχαίο checkin στο [start, finish) και τυχαίο checkout στο (checkin, finish].
-checkin_date  = start_date + floor(random() * (finish_date - start_date))::int;
-checkout_date = checkin_date + 1 + floor(random() * (finish_date - checkin_date))::int;
-
-reservation_date  = checkin_date - 20;
-cancellation_date = checkin_date - 10;
-
 FOR i IN 1..n LOOP
-    random_bookedbyclient = (SELECT cl."idClient" FROM client cl ORDER BY random() LIMIT 1);
+    -- Κάθε κράτηση έχει δικό της τυχαίο πλήθος δωματίων (1-5) και δικές της ημερομηνίες:
+    -- checkin στο [start, finish) και checkout στο (checkin, finish].
+    random_number_of_rooms = floor(random() * 5 + 1)::int;
+    checkin_date  = start_date + floor(random() * (finish_date - start_date))::int;
+    checkout_date = checkin_date + 1 + floor(random() * (finish_date - checkin_date))::int;
+
+    -- Ο πελάτης που κάνει την κράτηση δεν είναι υπάλληλος του ξενοδοχείου.
+    random_bookedbyclient =
+        (SELECT cl."idClient"
+         FROM client cl
+         WHERE NOT EXISTS (SELECT 1 FROM employee e
+                           WHERE e."idEmployee" = cl."idClient" AND e."hotelID" = hotelid)
+         ORDER BY random() LIMIT 1);
     hotel_bookingid = nextval('idhbooking');
     INSERT INTO hotelbooking
-    VALUES (hotel_bookingid, reservation_date, cancellation_date, NULL, random_bookedbyclient, false, NULL, 'confirmed');
+    VALUES (hotel_bookingid, checkin_date - 20, checkin_date - 10, NULL, random_bookedbyclient, false, NULL, 'confirmed');
 
     country_of_random_bookedbyclient =
         (SELECT pe.country FROM person pe WHERE pe."idPerson" = random_bookedbyclient);
 
     FOR j IN 1..random_number_of_rooms LOOP
+        -- Υπεύθυνος δωματίου: πελάτης από την ίδια χώρα, όχι υπάλληλος του ξενοδοχείου.
         random_bookedforperson =
             (SELECT cl."idClient"
              FROM client cl
              JOIN person pe ON cl."idClient" = pe."idPerson"
              WHERE pe.country = country_of_random_bookedbyclient
+               AND NOT EXISTS (SELECT 1 FROM employee e
+                               WHERE e."idEmployee" = cl."idClient" AND e."hotelID" = hotelid)
              ORDER BY random() LIMIT 1);
 
         random_room_available_from_hotelid =
@@ -242,6 +255,9 @@ $$;
 --      το Transaction είχε ξένο κλειδί με ON DELETE CASCADE προς την κράτηση που μόλις
 --      σβήστηκε. Ο πίνακας συνδιαλλαγών είναι ιστορικό, άρα το ξένο κλειδί αφαιρείται:
 --      οι συνδιαλλαγές μένουν και μετά τη διαγραφή της κράτησης.
+--      Επίσης η αρχική λογική έχανε συνδιαλλαγές: payed true -> false -> true χρέωνε δύο
+--      φορές, και οι αλλαγές status (pending -> confirmed, confirmed -> canceled) δεν
+--      καταγράφονταν. Τώρα καταγράφεται πάντα η διαφορά του εισπραγμένου ποσού.
 -- ---------------------------------------------------------------------------------------
 ALTER TABLE "Transaction" DROP CONSTRAINT IF EXISTS "Transaction_idhotelbooking_fkey";
 
@@ -249,56 +265,67 @@ CREATE OR REPLACE FUNCTION "5_1_transaction_update"()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
+DECLARE
+    -- Ποσό που έχει εισπραχθεί για την κράτηση: το totalamount όταν είναι πληρωμένη και
+    -- επιβεβαιωμένη, αλλιώς 0. Κάθε αλλαγή του γράφεται ως διαφορά, ώστε το άθροισμα των
+    -- συνδιαλλαγών μιας κράτησης να ισούται πάντα με το ποσό αυτό.
+    old_charged numeric = 0;
+    new_charged numeric = 0;
 BEGIN
-IF (TG_OP = 'INSERT') THEN
-    IF (NEW.status = 'confirmed') THEN
-        IF (NEW.payed AND NEW.totalamount IS NOT NULL) THEN
-            INSERT INTO "Transaction" VALUES (nextval('idtransaction'), NEW.idhotelbooking, 'insert', NEW.totalamount, current_date);
-        ELSIF (NEW.payed = false) THEN
-            RAISE NOTICE 'The booking is not checked to be payed.';
-        ELSIF (NEW.payed AND NEW.totalamount IS NULL) THEN
-            RAISE EXCEPTION 'The amount is null.';
-        END IF;
+IF TG_OP IN ('UPDATE', 'DELETE') THEN
+    IF OLD.payed AND OLD.status = 'confirmed' THEN
+        old_charged = COALESCE(OLD.totalamount, 0)::numeric;
+    END IF;
+END IF;
+IF TG_OP IN ('INSERT', 'UPDATE') THEN
+    IF NEW.payed AND NEW.status = 'confirmed' THEN
+        new_charged = COALESCE(NEW.totalamount, 0)::numeric;
+    END IF;
+END IF;
+
+IF TG_OP = 'INSERT' THEN
+    IF new_charged > 0 THEN
+        INSERT INTO "Transaction" VALUES (nextval('idtransaction'), NEW.idhotelbooking, 'insert', new_charged, current_date);
     END IF;
     RETURN NEW;
-
-ELSIF (TG_OP = 'UPDATE') THEN
-    IF (NEW.status = 'confirmed') THEN
-        IF (OLD.payed = false AND NEW.payed = true) THEN
-            IF (NEW.totalamount IS NOT NULL) THEN
-                INSERT INTO "Transaction" VALUES (nextval('idtransaction'), NEW.idhotelbooking, 'update', NEW.totalamount, current_date);
-            ELSE
-                RAISE EXCEPTION 'The amount is null.';
-            END IF;
-        ELSIF (OLD.payed = true AND NEW.payed = true) THEN
-            IF (NEW.totalamount IS NOT NULL) THEN
-                IF (OLD.totalamount IS NOT NULL) THEN
-                    IF (NEW.totalamount <> OLD.totalamount) THEN
-                        INSERT INTO "Transaction" VALUES (nextval('idtransaction'), NEW.idhotelbooking, 'update', NEW.totalamount - OLD.totalamount, current_date);
-                    END IF;
-                ELSE
-                    INSERT INTO "Transaction" VALUES (nextval('idtransaction'), NEW.idhotelbooking, 'update', NEW.totalamount, current_date);
-                    RAISE NOTICE 'The old total amount was null so it has to be payed now.';
-                END IF;
-            ELSE
-                RAISE EXCEPTION 'The new amount is null.';
-            END IF;
-        ELSIF (OLD.payed = true AND NEW.payed = false) THEN
-            RAISE NOTICE 'The updated booking is not checked to be payed.';
-        END IF;
+ELSIF TG_OP = 'UPDATE' THEN
+    IF new_charged <> old_charged THEN
+        INSERT INTO "Transaction" VALUES (nextval('idtransaction'), NEW.idhotelbooking, 'update', new_charged - old_charged, current_date);
     END IF;
     RETURN NEW;
-
-ELSIF (TG_OP = 'DELETE') THEN
-    IF (OLD.payed = true AND OLD.totalamount > 0) THEN
-        INSERT INTO "Transaction" VALUES (nextval('idtransaction'), OLD.idhotelbooking, 'delete', -OLD.totalamount, current_date);
-    ELSIF (OLD.payed = false) THEN
-        RAISE NOTICE 'The booking was not checked to be payed.';
-    ELSE
-        RAISE NOTICE 'The booking was not payed because the old amount was null or zero.';
+ELSE
+    IF old_charged > 0 THEN
+        INSERT INTO "Transaction" VALUES (nextval('idtransaction'), OLD.idhotelbooking, 'delete', -old_charged, current_date);
     END IF;
     RETURN OLD;
 END IF;
+END;
+$$;
+
+-- ---------------------------------------------------------------------------------------
+-- 5.2  Ενημέρωση κράτησης ξενοδοχείου. Η σύγκριση "!=" δεν έπιανε αλλαγή από/προς NULL,
+--      άρα η προθεσμία ακύρωσης μηδενιζόταν χωρίς manager και μετά η κράτηση σβηνόταν.
+--      Επίσης η ακύρωση (status = canceled) μετά την προθεσμία δεν ελεγχόταν καθόλου.
+-- ---------------------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION "5_2_hotelbooking_update"()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NEW.cancellationdate IS DISTINCT FROM OLD.cancellationdate THEN
+        IF NOT EXISTS (SELECT 1
+                       FROM "Manages" m
+                       JOIN employee e ON e."idEmployee" = m.employeeid
+                       WHERE m.idhotelbooking = OLD.idhotelbooking AND e.role = 'manager') THEN
+            RAISE EXCEPTION 'Cannot update the cancellation date. Only the manager can.';
+        END IF;
+    END IF;
+
+    IF NEW.status = 'canceled' AND OLD.status IS DISTINCT FROM 'canceled'
+       AND OLD.cancellationdate < current_date THEN
+        RAISE EXCEPTION 'Cannot cancel the reservation. The cancellation date has passed.';
+    END IF;
+    RETURN NEW;
 END;
 $$;
 
@@ -325,9 +352,17 @@ IF EXISTS (SELECT 1 FROM roombooking rb
     RAISE EXCEPTION 'This room booking already exists.';
 END IF;
 
+IF NEW.checkin IS NULL OR NEW.checkout IS NULL THEN
+    RAISE EXCEPTION 'The checkin and the checkout cannot be null.';
+END IF;
+
 IF NEW.checkout <= NEW.checkin THEN
     RAISE EXCEPTION 'The checkout must be after the checkin.';
 END IF;
+
+-- Κλείδωμα ανά δωμάτιο ως το τέλος της συναλλαγής: δύο ταυτόχρονες εισαγωγές για το ίδιο
+-- δωμάτιο εκτελούνται η μία μετά την άλλη, άρα η δεύτερη βλέπει την πρώτη.
+PERFORM pg_advisory_xact_lock(NEW."roomID");
 
 IF EXISTS (SELECT 1 FROM roombooking rb
            WHERE rb."roomID" = NEW."roomID"
@@ -337,6 +372,9 @@ IF EXISTS (SELECT 1 FROM roombooking rb
 END IF;
 
 NEW.rate = "5_3_current_room_rate"(NEW."roomID");
+IF NEW.rate IS NULL THEN
+    RAISE EXCEPTION 'There is no rate for this room type in this hotel.';
+END IF;
 RETURN NEW;
 END;
 $$;

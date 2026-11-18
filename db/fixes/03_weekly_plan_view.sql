@@ -38,7 +38,7 @@ RETURNS character varying
 LANGUAGE sql STABLE
 AS $$
     SELECT COALESCE(
-        (SELECT COALESCE(cl.documentclient, 'person ' || rb."bookedforpersonID")
+        (SELECT COALESCE(cl.documentclient, 'person ' || COALESCE(rb."bookedforpersonID"::text, '?'))
          FROM roombooking AS rb
          LEFT JOIN client AS cl ON cl."idClient" = rb."bookedforpersonID"
          WHERE rb."roomID" = room_id AND rb.checkin <= day_in AND rb.checkout > day_in
@@ -91,6 +91,10 @@ BEGIN
     IF rb.checkin = day_in AND rb.checkout = day_in + 1 THEN
         DELETE FROM roombooking
         WHERE "hotelbookingID" = rb."hotelbookingID" AND "roomID" = room_id;
+        -- Αν ήταν το τελευταίο δωμάτιο, δεν μένει άδεια κράτηση πίσω.
+        DELETE FROM hotelbooking AS hb
+        WHERE hb.idhotelbooking = rb."hotelbookingID"
+          AND NOT EXISTS (SELECT 1 FROM roombooking AS x WHERE x."hotelbookingID" = hb.idhotelbooking);
     ELSIF rb.checkin = day_in THEN
         UPDATE roombooking SET checkin = day_in + 1
         WHERE "hotelbookingID" = rb."hotelbookingID" AND "roomID" = room_id;
@@ -106,12 +110,16 @@ BEGIN
         INSERT INTO hotelbooking (idhotelbooking, reservationdate, cancellationdate, totalamount,
                                   "bookedbyclientID", payed, paymethod, status)
         SELECT new_booking_id, hb.reservationdate, hb.cancellationdate, NULL,
-               hb."bookedbyclientID", false, NULL, hb.status
+               hb."bookedbyclientID", hb.payed, hb.paymethod, hb.status
         FROM hotelbooking AS hb
         WHERE hb.idhotelbooking = rb."hotelbookingID";
 
         INSERT INTO roombooking ("hotelbookingID", "roomID", "bookedforpersonID", checkin, checkout, rate)
         VALUES (new_booking_id, room_id, rb."bookedforpersonID", day_in + 1, rb.checkout, NULL);
+
+        -- Η νέα κράτηση κρατά την κατάσταση πληρωμής και τους υπαλλήλους που τη διαχειρίζονται.
+        INSERT INTO "Manages" (employeeid, idhotelbooking)
+        SELECT m.employeeid, new_booking_id FROM "Manages" AS m WHERE m.idhotelbooking = rb."hotelbookingID";
     END IF;
 END;
 $$;
@@ -156,7 +164,7 @@ BEGIN
     new_booking_id = nextval('idhbooking');
     INSERT INTO hotelbooking (idhotelbooking, reservationdate, cancellationdate, totalamount,
                               "bookedbyclientID", payed, paymethod, status)
-    VALUES (new_booking_id, current_date, GREATEST(current_date, day_in - 10), NULL,
+    VALUES (new_booking_id, current_date, day_in - 1, NULL,       -- δωρεάν ακύρωση ως την παραμονή
             client_id, false, NULL, 'confirmed');
 
     INSERT INTO roombooking ("hotelbookingID", "roomID", "bookedforpersonID", checkin, checkout, rate)
@@ -184,6 +192,9 @@ BEGIN
     END IF;
 
     IF NEW.rate IS DISTINCT FROM OLD.rate OR NEW.discount IS DISTINCT FROM OLD.discount THEN
+        IF OLD.rate IS NULL THEN
+            RAISE EXCEPTION 'There is no rate for room type % in hotel %. Add a row to roomrate first.', OLD.roomtype, OLD."idHotel";
+        END IF;
         IF NEW.rate IS NULL OR NEW.rate < 0 OR NEW.discount IS NULL OR NEW.discount < 0 OR NEW.discount > 100 THEN
             RAISE EXCEPTION 'Rate must be >= 0 and discount between 0 and 100.';
         END IF;
