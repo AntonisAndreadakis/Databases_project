@@ -1,0 +1,115 @@
+
+
+CREATE OR REPLACE FUNCTION "3_3_displayMaxDiscountRoomsPerHotel"()
+RETURNS TABLE(name varchar(45), roomtype varchar(45), discount real) AS 
+$$
+BEGIN
+
+RETURN QUERY
+
+select t2.hotelName, t2.roomtype, t2.maxDiscount
+from(
+	select t1.hotelID, t1.hotelName , rr.roomtype, rr.discount, t1.maxDiscount
+	from(
+		select hotel."idHotel" as hotelID, hotel.name as hotelName, max(rr.discount) as maxDiscount 
+		from "hotel" 
+		left join "roomrate" rr on (hotel."idHotel" = rr."idHotel")
+		group by hotel."idHotel"
+		order by hotel.name) t1
+	left join "roomrate" rr on (t1.hotelID = rr."idHotel")
+	left join "roomtype" rt on (rr."roomtype" = rt."typename")
+	where rr.discount = t1.maxDiscount ) t2
+order by t2.roomtype
+;
+END;
+$$
+LANGUAGE 'plpgsql';
+
+
+
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+CREATE OR REPLACE FUNCTION "3_4_displayBookingStatus"()
+RETURNS TABLE(idHotel integer, name varchar(45), fname varchar(45), lname varchar(45), idhotelbooking integer, reservationdate date, bookedBy integer) AS 
+$$
+BEGIN
+
+RETURN QUERY
+
+SELECT t1.idhotelbooking, t1.fname as clientFname, t1.lname as clientLname, t1.reservationdate,
+																CASE 
+																	WHEN t1.isClient THEN 'Client'
+																	WHEN t1.isEmployee THEN 'Employee'
+																	ELSE 'Other'
+																END AS bookedBy
+FROM (
+	SELECT hotel."idHotel", hotel.name, hotelbooking.idhotelbooking, hotelbooking.reservationdate, fname, lname, client."idClient" IS NOT NULL as isClient, employee."idEmployee" IS NOT NULL isEmployee
+	FROM "hotel"
+	LEFT JOIN "room" ON (hotel."idHotel" = room."idHotel")
+	INNER JOIN "roombooking" ON (roombooking."roomID" = room."idRoom")
+	LEFT JOIN "hotelbooking" ON (roombooking."hotelbookingID" = hotelbooking."idhotelbooking")
+	LEFT JOIN "person" ON (person."idPerson" = roombooking."bookedforpersonID")
+	LEFT JOIN "client" ON (person."idPerson" = client."idClient" AND client."idClient" = hotelbooking."bookedbyclientID")
+	LEFT JOIN "employee" ON (person."idPerson" = employee."idEmployee" )
+	WHERE hotel."idHotel"=11 ) t1
+
+;
+END;
+$$
+LANGUAGE 'plpgsql';
+
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+CREATE OR REPLACE FUNCTION public."4_2_countAvgAge"()
+RETURNS TABLE(roomtype varchar(45), age integer) AS
+$$
+BEGIN
+
+RETURN QUERY
+
+SELECT t1.roomtype, ROUND(AVG(t1.age),2)
+FROM (
+	SELECT roomtype, TO_CHAR(NOW()::DATE, 'YYYY')::integer - TO_CHAR("person".dateofbirth::DATE, 'YYYY')::integer as age
+	FROM "room"
+	INNER JOIN "roombooking" ON (roombooking."roomID" = room."idRoom")
+	LEFT JOIN "person" ON (person."idPerson" = roombooking."bookedforpersonID") ) AS t1
+GROUP BY t1.roomtype
+;
+
+END;
+$$
+LANGUAGE 'plpgsql';
+
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+CREATE OR REPLACE FUNCTION public."4_4_bigIncome"()
+RETURNS TABLE(roomtype varchar(45), age integer) AS
+$$
+BEGIN
+
+RETURN QUERY
+
+SELECT *
+FROM(
+	SELECT hotel."idHotel" AS hotelID, hotel."city" AS city, SUM("transaction".amount) as eispraksi, AVG("transaction".amount) as mesosoros
+	FROM "hotel"
+	LEFT JOIN "room" ON (hotel."idHotel" = room."idHotel")
+	INNER JOIN "roombooking" ON (room."idRoom" = roombooking."roomID")
+	INNER JOIN "hotelbooking" ON (roombooking."hotelbookingID" = hotelbooking."idhotelbooking")
+	LEFT JOIN "transaction" ON (hotelbooking."idhotelbooking" = "transaction"."idhotelbooking")
+	GROUP BY hotel."idHotel" , hotel."city") AS t1
+--WHERE t1.eispraksi IS NULL AND t1.mesosoros = 0
+;
+
+END;
+$$
+LANGUAGE 'plpgsql';

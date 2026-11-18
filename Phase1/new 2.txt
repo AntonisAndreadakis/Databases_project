@@ -1,0 +1,136 @@
+CREATE OR REPLACE FUNCTION "5_2_5_3_before_roombooking_update"() RETURNS TRIGGER AS
+$$
+DECLARE
+canc_date_hb date;
+availability_room boolean;
+available_until date;
+available_after date;
+rate_room real;
+
+BEGIN
+canc_date_hb = (SELECT hb.cancellationdate FROM "hotelbooking" hb WHERE hb.idhotelbooking=NEW."hotelbookingID");
+
+IF (canc_date_hb < (select current_date)) THEN
+	IF((NEW.checkin=OLD.checkin AND NEW.checkout<OLD.checkout) OR (NEW.checkin>OLD.checkin AND NEW.checkout=OLD.checkout)) THEN
+		Raise Exception 'Cancellation date has passed you cannot decrease the number of days of the reservation.';
+	ELSIF ((NEW.checkin<OLD.checkin AND NEW.checkout=OLD.checkout)) THEN ---case when the days are increased because of the checkin
+		IF((SELECT rb."roomID" FROM "roombooking" rb WHERE rb."roomID"=OLD."roomID" AND rb."hotelbookingID"=OLD."hotelbookingID") 
+		   	NOT IN (SELECT rb1."roomID" FROM "roombooking" rb1 WHERE rb1.checkin<=NEW.checkin)) THEN
+	   		availability_room=true;
+			available_after = (SELECT max(rb.checkout) FROM "roombooking" rb
+							   WHERE rb."roomID"=OLD."roomID" and rb.checkout<NEW.checkin);
+			Raise Notice 'Room available after %',available_after;
+	  	ELSE
+	   		availability_room=false;
+	    END IF;
+			
+		IF (availability_room) THEN
+			rate_room = (SELECT rr.rate-(rr.rate*rr.discount/100) FROM "roomrate" rr 
+						 WHERE rr."idHotel"= (SELECT r."idHotel" FROM "room" r WHERE r."idRoom"=OLD."roomID"
+						 AND rr.roomtype = (SELECT r."roomtype" FROM "room" r WHERE r."idRoom"=OLD."roomID")));
+				
+			UPDATE "roombooking" SET checkin=NEW.checkin, rate = rate_room
+			WHERE "hotelbookingID"=OLD."hotelbookingID" AND "roomID"=OLD."roomID";
+		ELSE
+			Raise Notice 'Your room is not available before your checkin.';
+		END IF;
+			
+	ELSIF ((NEW.checkin=OLD.checkin AND NEW.checkout>OLD.checkout)) THEN ---case when the days are increased because of the checkout
+		IF((SELECT rb."roomID" FROM "roombooking" rb WHERE rb."roomID"=OLD."roomID" AND rb."hotelbookingID"=OLD."hotelbookingID") 
+		   	NOT IN (SELECT rb."roomID" FROM "roombooking" rb WHERE rb.checkin<=NEW.checkout)) THEN
+	   		availability_room=true;
+			available_until = (SELECT min(rb.checkin) FROM "roombooking" rb
+							   WHERE rb."roomID"=OLD."roomID" and rb.checkin>NEW.checkout);
+			Raise Notice 'Room available until %',available_until;
+	  	ELSE
+	   		availability_room=false;
+	    END IF;
+			
+		IF (availability_room) THEN
+			rate_room = (SELECT rr.rate-(rr.rate*rr.discount/100) FROM "roomrate" rr 
+						 WHERE rr."idHotel"= (SELECT r."idHotel" FROM "room" r WHERE r."idRoom"=OLD."roomID"
+						 AND rr.roomtype = (SELECT r."roomtype" FROM "room" r WHERE r."idRoom"=OLD."roomID")));
+							 
+			UPDATE "roombooking" SET checkout=NEW.checkout, rate = rate_room
+			WHERE "hotelbookingID"=OLD."hotelbookingID" AND "roomID"=OLD."roomID";
+		ELSE
+			Raise Notice 'Your room is not available after your checkout.';
+		END IF;
+
+	END IF;
+-------------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------------
+ELSE --canc_date_hb >= current_date
+	rate_room = (SELECT rr.rate-(rr.rate*rr.discount/100) FROM "roomrate" rr 
+				 WHERE rr."idHotel"= (SELECT r."idHotel" FROM "room" r WHERE r."idRoom"=OLD."roomID"
+				 AND rr.roomtype = (SELECT r."roomtype" FROM "room" r WHERE r."idRoom"=OLD."roomID")));
+				 
+	IF (NEW.checkin != OLD.checkin) THEN
+		IF (NEW.checkout != OLD.checkout) THEN -- if both dates have changed
+			IF((SELECT rb."roomID" FROM "roombooking" rb WHERE rb."roomID"=OLD."roomID" AND rb."hotelbookingID"=OLD."hotelbookingID") 
+		   	NOT IN (SELECT rb."roomID" FROM "roombooking" rb WHERE rb.checkin<=NEW.checkout and rb.checkin<=NEW.checkin)) THEN
+	   			availability_room=true;
+				available_until = (SELECT min(rb.checkin) FROM "roombooking" rb
+							 	   WHERE rb."roomID"=OLD."roomID" and rb.checkin>NEW.checkout);
+				available_after = (SELECT max(rb.checkout) FROM "roombooking" rb
+							  	   WHERE rb."roomID"=OLD."roomID" and rb.checkout<NEW.checkin);
+				Raise Notice 'Room available after %',available_after;
+	  		ELSE
+	   			availability_room=false;
+	    	END IF;
+			
+			IF (availability_room) THEN
+				UPDATE "roombooking" SET checkin=NEW.checkin, checkout=NEW.checkout, rate = rate_room
+				WHERE "hotelbookingID"=OLD."hotelbookingID" AND "roomID"=OLD."roomID";
+					 
+			ELSE
+				Raise Notice 'Your room is not available after your checkout or before your checkin.';
+			END IF;
+		-------------------------------------------------------------------------------------------------	
+		ELSE  ---if checkin has changed but not the checkout
+			IF((SELECT rb."roomID" FROM "roombooking" rb WHERE rb."roomID"=OLD."roomID" AND rb."hotelbookingID"=OLD."hotelbookingID") 
+		   	NOT IN (SELECT rb1."roomID" FROM "roombooking" rb1 WHERE rb1.checkin<=NEW.checkin)) THEN
+	   			availability_room=true;
+				available_after = (SELECT max(rb.checkout) FROM "roombooking" rb
+							  	   WHERE rb."roomID"=OLD."roomID" and rb.checkout<NEW.checkin);
+				Raise Notice 'Room available after %',available_after;
+	  		ELSE
+	   			availability_room=false;
+	    	END IF;
+			
+			IF (availability_room) THEN
+				UPDATE "roombooking" SET checkin=NEW.checkin, rate = rate_room
+				WHERE "hotelbookingID"=OLD."hotelbookingID" AND "roomID"=OLD."roomID";
+			ELSE
+				Raise Notice 'Your room is not available before your checkin.';
+			END IF;
+		END IF; --- if of equallity in checkout date case checkin date has changed
+ 	----------------------------------------------------------------------------------------------------------------------------------	
+	ELSE ---if checkin hasnt changed
+		IF (NEW.checkout != OLD.checkout) THEN  ---if checkin hasnt changed but checkout changed
+			IF((SELECT rb."roomID" FROM "roombooking" rb WHERE rb."roomID"=OLD."roomID" AND rb."hotelbookingID"=OLD."hotelbookingID") 
+				NOT IN (SELECT rb."roomID" FROM "roombooking" rb WHERE rb.checkin<=NEW.checkout)) THEN
+				availability_room=true;
+				available_until = (SELECT min(rb.checkin) FROM "roombooking" rb
+								   WHERE rb."roomID"=OLD."roomID" and rb.checkin>NEW.checkout);
+				Raise Notice 'Room available until %',available_until;
+			ELSE
+				availability_room=false;
+			END IF;
+
+			IF (availability_room) THEN
+				UPDATE "roombooking" SET checkout=NEW.checkout, rate = rate_room
+				WHERE "hotelbookingID"=OLD."hotelbookingID" AND "roomID"=OLD."roomID";
+
+			ELSE
+				Raise Notice 'Your room is not available after your checkout.';
+			END IF;
+		END IF;  --- if of equallity in checkout date case checkin date hasnt changed
+		
+	END IF;  ----if of equallity on checkin date
+END IF;  ---if cancellation date
+
+RETURN NEW;
+END;
+$$
+LANGUAGE 'plpgsql';

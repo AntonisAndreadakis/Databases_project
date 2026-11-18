@@ -1,0 +1,98 @@
+
+
+
+
+
+
+CREATE OR REPLACE FUNCTION "3_3_displayMaxDiscountRoomsPerHotel"()
+RETURNS TABLE(idHotel integer, name varchar(45), roomtype varchar(45), discount real) AS 
+$$
+BEGIN
+
+RETURN QUERY
+
+select t2.hotelName, t2.roomtype, t2.maxDiscount
+from(
+	select t1.hotelID, t1.hotelName , rr.roomtype, rr.discount, t1.maxDiscount
+	from(
+		select hotel."idHotel" as hotelID, hotel.name as hotelName, max(rr.discount) as maxDiscount 
+		from "hotel" 
+		left join "roomrate" rr on (hotel."idHotel" = rr."idHotel")
+		group by hotel."idHotel"
+		order by hotel.name) t1
+	left join "roomrate" rr on (t1.hotelID = rr."idHotel")
+	left join "roomtype" rt on (rr."roomtype" = rt."typename")
+	where rr.discount = t1.maxDiscount ) t2
+order by t2.roomtype
+;
+END;
+$$
+LANGUAGE 'plpgsql';
+
+
+
+--------------------------------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION "3_3_displayMaxDiscountRoomsPerHotel"()
+RETURNS TABLE( name varchar(45), roomtype varchar(45), discount real) AS 
+$$
+BEGIN
+
+RETURN QUERY
+SELECT h.name, rr1.roomtype, rr1.discount
+FROM "hotel" h natural join "roomrate" rr1 natural join (SELECT rr."idHotel", max(rr.discount) as maximum_disc
+FROM   "roomrate" rr
+GROUP BY rr."idHotel") as t2
+WHERE h."idHotel"=t2."idHotel" and rr1.discount=t2.maximum_disc
+ORDER BY rr1.roomtype
+
+
+;
+END;
+$$
+LANGUAGE 'plpgsql';
+
+select * from "3_3_displayMaxDiscountRoomsPerHotel"()
+
+
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+CREATE OR REPLACE FUNCTION "3_4_displayBookingStatus"()
+RETURNS TABLE(idHotel integer, name varchar(45), fname varchar(45), lname varchar(45), idhotelbooking integer, reservationdate date, bookedBy integer) AS 
+$$
+BEGIN
+
+RETURN QUERY
+
+SELECT t1.idhotelbooking, t1.fname as clientFname, t1.lname as clientLname, t1.reservationdate,
+																CASE 
+																	WHEN t1.isClient THEN 'Client'
+																	WHEN t1.isEmployee THEN 'Employee'
+																	ELSE 'Other'
+																END AS bookedBy
+FROM (
+	SELECT hotel."idHotel", hotel.name, hotelbooking.idhotelbooking, hotelbooking.reservationdate, fname, lname, client."idClient" IS NOT NULL as isClient, employee."idEmployee" IS NOT NULL isEmployee
+	FROM "hotel"
+	LEFT JOIN "room" ON (hotel."idHotel" = room."idHotel")
+	INNER JOIN "roombooking" ON (roombooking."roomID" = room."idRoom")
+	LEFT JOIN "hotelbooking" ON (roombooking."hotelbookingID" = hotelbooking."idhotelbooking")
+	LEFT JOIN "person" ON (person."idPerson" = roombooking."bookedforpersonID")
+	LEFT JOIN "client" ON (person."idPerson" = client."idClient" AND client."idClient" = hotelbooking."bookedbyclientID")
+	LEFT JOIN "employee" ON (person."idPerson" = employee."idEmployee" )
+	WHERE hotel."idHotel"=11 ) t1
+
+;
+END;
+$$
+LANGUAGE 'plpgsql';
+
