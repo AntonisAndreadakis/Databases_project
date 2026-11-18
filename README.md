@@ -18,8 +18,11 @@
 | `db/fixes/` | Οι διορθώσεις, ως script που εφαρμόζεται πάνω στο backup (βλ. [Διορθώσεις](#διορθώσεις)) |
 | `db/checks/01_structure.sql` | Ερωτήματα ελέγχου της δομής |
 | `db/checks/02_examples.sql` | Παραδείγματα κλήσης των συναρτήσεων |
-| `db/checks/03_fix_tests.sql`, `04_weekly_plan_tests.sql`, `05_review_regressions.sql`, `06_query_function_tests.sql` | Δοκιμές των διορθώσεων |
-| `docker-compose.yml` | Τοπική PostgreSQL 16 για το project |
+| `db/checks/03_fix_tests.sql`, `04_weekly_plan_tests.sql`, `05_review_regressions.sql`, `06_query_function_tests.sql`, `07_port_findings.sql` | Δοκιμές των διορθώσεων |
+| `docker-compose.yml` | Τοπική PostgreSQL 16 για το project· με το profile `mysql` και MySQL, phpMyAdmin, web εφαρμογή |
+| `db/mysql/` | Η ίδια βάση σε MySQL 8.4 (βλ. [Εκδοχή MySQL](#εκδοχή-mysql-με-phpmyadmin-και-web-εφαρμογή)) |
+| `webapp/` | Web εφαρμογή Java με login, πάνω στη MySQL |
+| `docs/diagrams/` | Διάγραμμα ER και δομή της βάσης ως εικόνες (βλ. [Διαγράμματα](#διαγράμματα-της-δομής)) |
 | `docs/REPORT.md` | Η αναφορά της ομάδας |
 | `docs/*.pdf` | Οι εκφωνήσεις των δύο φάσεων |
 
@@ -235,7 +238,11 @@ docker compose exec db psql -U postgres -d hotel -f /sql/checks/05_review_regres
 docker compose exec db psql -U postgres -d hotel -f /sql/checks/06_query_function_tests.sql
 ```
 
-Αναμένονται 9, 3, 12 και 7 γραμμές `OK ...` αντίστοιχα, και στο τέλος της καθεμιάς `ALL TESTS PASSED`.
+```powershell
+docker compose exec db psql -U postgres -d hotel -f /sql/checks/07_port_findings.sql
+```
+
+Αναμένονται 9, 3, 12, 7 και 2 γραμμές `OK ...` αντίστοιχα, και στο τέλος της καθεμιάς `ALL TESTS PASSED`.
 
 Τι διορθώθηκε (λεπτομέρειες στα σχόλια των αρχείων του `db/fixes/`):
 
@@ -262,6 +269,15 @@ docker compose exec db psql -U postgres -d hotel -f /sql/checks/06_query_functio
 Οι διορθώσεις ελέγχθηκαν και από ανεξάρτητη ανασκόπηση που πυροδότησε τα triggers στη βάση· όσα βρήκε και διορθώθηκαν
 καλύπτονται από το `05_review_regressions.sql`. Οι συναρτήσεις των ερωτημάτων 3 και 4 συγκρίνονται στο
 `06_query_function_tests.sql` με ανεξάρτητα γραμμένα ερωτήματα πάνω σε όλα τα δεδομένα.
+
+Δύο ακόμα λάθη βρέθηκαν όταν η βάση συγκρίθηκε, σενάριο προς σενάριο, με τη [μεταφορά της σε MySQL](#εκδοχή-mysql-με-phpmyadmin-και-web-εφαρμογή),
+και καλύπτονται από το `07_port_findings.sql`:
+
+- **5.3 update:** το πρώτο `UPDATE` κράτησης δωματίου σε κάθε νέα σύνδεση δεν ανανέωνε το `rate` (από το δεύτερο και
+  μετά δούλευε, γι' αυτό δεν το έπιαναν οι προηγούμενες δοκιμές).
+- **2.1 delete:** η διαγραφή πελάτη αποτύγχανε με σφάλμα ξένου κλειδιού όταν οι κρατήσεις του είχαν δημιουργηθεί μέσα
+  στην ίδια συναλλαγή. Το 2.1 σβήνει τώρα ρητά τις κρατήσεις πριν από το πρόσωπο. Ένα απευθείας `DELETE FROM person`
+  στην ίδια περίπτωση εξακολουθεί να αποτυγχάνει.
 
 Σύμβαση που ακολουθείται πλέον παντού: μια κράτηση πιάνει τις νύχτες από το `checkin` έως πριν το `checkout`,
 άρα νέα κράτηση μπορεί να αρχίζει την ημέρα που η προηγούμενη κάνει checkout.
@@ -356,6 +372,178 @@ docker compose run --rm app
   υπεύθυνος σε κράτηση δωματίου του. Νέα κράτηση με άφιξη στο παρελθόν δεν γίνεται δεκτή.
 
 Η παράδοση ζητούσε Eclipse project· εδώ είναι Maven project (στο Eclipse: *Import → Existing Maven Projects*).
+
+## Διαγράμματα της δομής
+
+Στο `docs/diagrams/` υπάρχει η δομή της βάσης ως εικόνες. Βγήκαν από τα μεταδεδομένα της MySQL (`information_schema`)
+μετά τις διορθώσεις· οι πίνακες και τα ξένα κλειδιά είναι ίδια και στην PostgreSQL, εκτός από τους `app_user` και
+`room_lock`, που υπάρχουν μόνο στη MySQL.
+
+| Αρχείο | Τι δείχνει |
+|---|---|
+| `docs/diagrams/er-diagram.png` | Διάγραμμα ER: οι 19 πίνακες με όλες τις στήλες και τα 25 ξένα κλειδιά |
+| `docs/diagrams/triggers-flow.png` | Ποιος πίνακας αλλάζει ή διαβάζει ποιον μέσω triggers και συναρτήσεων |
+| `docs/diagrams/db-structure.png` | Όλη η δομή σε μία σελίδα: ER, πίνακες, συναρτήσεις, triggers και όψεις, με περιγραφές |
+| `docs/diagrams/*.mmd` | Ο κώδικας Mermaid των δύο διαγραμμάτων, για αλλαγές |
+
+![Διάγραμμα ER](docs/diagrams/er-diagram.png)
+
+![Triggers και συναρτήσεις](docs/diagrams/triggers-flow.png)
+
+## Εκδοχή MySQL με phpMyAdmin και web εφαρμογή
+
+Η ίδια βάση, με τις διορθώσεις, υπάρχει και σε MySQL 8.4, μαζί με phpMyAdmin και μια web εφαρμογή Java με login.
+Είναι ανεξάρτητη από την PostgreSQL: τρέχει σε δικά της containers και ξεκινά με το profile `mysql`.
+
+```powershell
+docker compose --profile mysql up -d --wait
+```
+
+Την πρώτη φορά η MySQL φορτώνει μόνη της το σχήμα, τα δεδομένα και τις routines από το `db/mysql/init/`
+(λίγα δευτερόλεπτα) και η web εφαρμογή μεταγλωττίζεται: η σελίδα της απαντά λίγο μετά το `Healthy`, ή σε περίπου
+ένα λεπτό την πρώτη φορά που κατεβαίνουν οι βιβλιοθήκες της.
+
+| Τι | Διεύθυνση | Σύνδεση |
+|---|---|---|
+| Web εφαρμογή | <http://127.0.0.1:8080> | χρήστης `admin`, κωδικός η τιμή της `APP_ADMIN_PASSWORD` |
+| phpMyAdmin | <http://127.0.0.1:8081> | χρήστης `root` ή `hotel_app`, κωδικός η τιμή της `MYSQL_ROOT_PASSWORD` ή `MYSQL_PASSWORD` |
+| MySQL από εργαλείο στον υπολογιστή | `127.0.0.1:3307`, βάση `hotel` | όπως στο phpMyAdmin |
+
+Όλοι οι κωδικοί έχουν προεπιλογή `local_dev_only` (placeholder για τοπική χρήση) και όλες οι θύρες ακούν μόνο στο
+`127.0.0.1`. Αλλάζουν από το `.env` (βλ. `.env.example`) **πριν** από την πρώτη εκκίνηση.
+
+Γραμμή εντολών MySQL μέσα στο container:
+
+```powershell
+docker compose exec mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" hotel'
+```
+
+### Αρχεία
+
+| Διαδρομή | Τι είναι |
+|---|---|
+| `db/mysql/init/01_schema.sql` | Πίνακες, κλειδιά, ευρετήρια και ο πίνακας `app_user` της web εφαρμογής |
+| `db/mysql/init/02_data.sql` | Τα δεδομένα του backup ως `INSERT` (παράγεται, βλ. παρακάτω) |
+| `db/mysql/init/03_query_routines.sql` | Ερωτήματα 1.1, 3.1-3.8, 4.1-4.5 και 6.1 |
+| `db/mysql/init/04_triggers.sql` | Ερωτήματα 2.1, 2.2, τα triggers των 5.1-5.3 και ο βοηθητικός πίνακας `room_lock` |
+| `db/mysql/init/05_weekly_plan.sql` | Ερώτημα 6.2 |
+| `db/mysql/checks/` | Έλεγχος δομής, παραδείγματα κλήσης και δοκιμές |
+| `db/mysql/tools/export_from_postgres.sh` | Ξαναφτιάχνει το `02_data.sql` από το backup της PostgreSQL |
+| `webapp/` | Η web εφαρμογή (Maven, Java 17, Javalin) |
+
+Τα αρχεία 03-05 μπορούν να ξανατρέξουν πάνω σε υπάρχουσα βάση, π.χ. μετά από αλλαγή:
+
+```powershell
+docker compose exec mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" hotel < /docker-entrypoint-initdb.d/04_triggers.sql'
+```
+
+### Τι αλλάζει σε σχέση με την PostgreSQL
+
+Οι πίνακες, τα δεδομένα και οι κανόνες είναι οι ίδιοι. Αλλάζει ο τρόπος που καλούνται ορισμένα πράγματα:
+
+| PostgreSQL | MySQL |
+|---|---|
+| `SELECT * FROM "3_6_findSubtypesOfAFacility"('Business Services')` | ``CALL `3_6_findSubtypesOfAFacility`('Business Services')``: οι συναρτήσεις που επιστρέφουν πίνακα έγιναν procedures |
+| `SELECT "2_1_update_clients_and_cards"(...)` | ``SELECT `2_1_update_clients_and_cards`(...)``: τα 2.1 και 2.2 έμειναν συναρτήσεις, ώστε μια αποτυχία στη μέση να αναιρεί όλη την κλήση |
+| `UPDATE "6_2_weeklyPlan" SET monday = ...` | ``SELECT `6_2_weeklyPlan_update`(idRoom, rate, discount, sunday, ..., saturday)``: η MySQL δεν έχει `INSTEAD OF` triggers. `NULL` σημαίνει «μην το αλλάξεις», `'0'` απελευθερώνει την ημέρα |
+| ονόματα σε `"διπλά εισαγωγικά"` | ονόματα σε `` `ανάποδα εισαγωγικά` `` (χρειάζονται μόνο όσα αρχίζουν με ψηφίο) |
+| sequences | `AUTO_INCREMENT` |
+| `RAISE EXCEPTION` | `SIGNAL SQLSTATE '45000'` με το ίδιο μήνυμα· τα `RAISE NOTICE` δεν έχουν αντίστοιχο και λείπουν |
+| δύο `CHECK` που καλούν συνάρτηση (`Manages`, `Participates`) | triggers στους ίδιους πίνακες |
+
+Διαφορές συμπεριφοράς που αξίζει να ξέρετε:
+
+- **Τα cascades δεν εκτελούν triggers.** Όταν μια γραμμή σβήνεται λόγω `ON DELETE CASCADE`, η MySQL δεν τρέχει τα triggers
+  της. Γι' αυτό υπάρχουν πέντε επιπλέον `BEFORE DELETE` triggers (σε `person`, `client`, `room`, `roomtype`, `hotel`) που
+  σβήνουν πρώτα ρητά τις κρατήσεις. Έτσι η διαγραφή ενός προσώπου ή ενός δωματίου απορρίπτεται όταν μια κράτησή του έχει
+  περάσει την προθεσμία ακύρωσης, όπως στην PostgreSQL, και τα ποσά και οι συνδιαλλαγές ενημερώνονται.
+- **Μια εντολή πάνω στο `roombooking` δεν μπορεί να διαβάζει το `hotelbooking`** (και αντίστροφα), γιατί τα triggers του
+  ενός αλλάζουν το άλλο (σφάλμα 1442). Για παράδειγμα το
+  `UPDATE roombooking ... WHERE hotelbookingID IN (SELECT ... FROM hotelbooking ...)` απορρίπτεται· βρείτε πρώτα τα id με
+  ξεχωριστό `SELECT`. Το `room` μπορεί να διαβάζεται κανονικά.
+- **Κλείδωμα ανά δωμάτιο.** Αντί για το advisory lock της PostgreSQL, τα triggers κλειδώνουν μια γραμμή του βοηθητικού
+  πίνακα `room_lock` (μία γραμμή ανά δωμάτιο). Δύο ταυτόχρονες κρατήσεις του ίδιου δωματίου δεν περνούν ποτέ και οι δύο.
+  Όταν όμως μια κράτηση αλλάζει την ίδια στιγμή που μπαίνει άλλη στο ίδιο δωμάτιο, η MySQL μπορεί να ακυρώσει τη μία
+  εντολή με σφάλμα 1213 (deadlock)· η εντολή απλώς ξαναδοκιμάζεται. Η web εφαρμογή το κάνει μόνη της.
+- **Ποσά στο `Transaction`.** Το `totalamount` είναι `FLOAT`, και η MySQL το γράφει στο `Transaction` με όλα τα δεκαδικά
+  του, ενώ η PostgreSQL το στρογγυλεύει σε 6 σημαντικά ψηφία. Με ακέραιες τιμές, όπως του dataset, τα ποσά είναι ίδια.
+- **Ρητό `rate` στο `UPDATE`.** Η PostgreSQL ξέρει αν το `UPDATE` όρισε `rate`. Η MySQL όχι, οπότε το trigger θεωρεί ότι
+  ορίστηκε όταν η νέα τιμή διαφέρει από την παλιά. Ένα `UPDATE` που ξαναγράφει την ίδια τιμή παίρνει την τρέχουσα τιμή του
+  δωματίου.
+- **Ξένο κλειδί `idmanagerFK`.** Στην PostgreSQL είχε οριστεί κατά λάθος πάνω στο `idEmployee`. Η MySQL δεν δέχεται τέτοιο
+  ορισμό, οπότε εδώ δείχνει από το `idmanager` στον υπάλληλο-προϊστάμενο.
+
+### Έλεγχοι
+
+```powershell
+docker compose exec mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" hotel --table < /sql/checks/01_structure.sql'
+```
+
+```powershell
+docker compose exec mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" hotel --table < /sql/checks/02_examples.sql'
+```
+
+```powershell
+docker compose exec mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" hotel < /sql/checks/03_trigger_tests.sql'
+```
+
+Ο πρώτος δείχνει τη δομή: 19 πίνακες (οι 17 της εργασίας, ο `app_user` και ο `room_lock`), 25 ξένα κλειδιά, 29
+συναρτήσεις και procedures, 21 triggers και 2 όψεις. Ο δεύτερος καλεί τα ερωτήματα με τα ίδια ορίσματα που έχει το
+`db/checks/02_examples.sql`. Ο τρίτος δοκιμάζει τα triggers και τις συναρτήσεις μέσα σε συναλλαγή που κάνει `ROLLBACK`:
+τυπώνει 38 γραμμές `OK ...` και τελειώνει με `ALL TESTS PASSED`.
+
+Κάθε εντολή τυπώνει πρώτα μια προειδοποίηση `Using a password on the command line interface can be insecure`· είναι
+αναμενόμενη.
+
+### Η web εφαρμογή
+
+Κάνει ό,τι και η εφαρμογή κονσόλας της φάσης Β, σε σελίδες: αναζήτηση ξενοδοχείου με τα αρχικά του ονόματος και, για το
+ξενοδοχείο που θα επιλέξετε, πελάτες με τα αρχικά του επωνύμου, κρατήσεις δωματίων ενός πελάτη με ενημέρωση, και διαθέσιμα
+δωμάτια για μια περίοδο με νέα κράτηση. Ό,τι απορρίπτουν τα triggers εμφανίζεται ως μήνυμα στη σελίδα.
+
+- **Χρήστες.** Αποθηκεύονται στον πίνακα `app_user`, με τον κωδικό μόνο ως BCrypt hash. Όταν ο πίνακας είναι άδειος, η
+  εφαρμογή δημιουργεί στην εκκίνηση τον χρήστη των `APP_ADMIN_USER` / `APP_ADMIN_PASSWORD`. Η αλλαγή αυτών των μεταβλητών
+  αργότερα δεν αλλάζει υπάρχοντα χρήστη.
+- **Σύνδεση με τη βάση.** Η εφαρμογή συνδέεται ως `hotel_app`· ο χρήστης της σελίδας δεν δίνει ποτέ στοιχεία της βάσης.
+- **Προστασίες.** Session cookie `HttpOnly` και `SameSite=Lax`, νέο session id μετά το login, CSRF token σε κάθε φόρμα,
+  όλα τα ερωτήματα με `PreparedStatement`, και κάθε τιμή που εμφανίζεται περνά από escaping.
+- **Τι δεν έχει.** Εγγραφή νέων χρηστών, αλλαγή κωδικού, ρόλους και όριο αποτυχημένων προσπαθειών. Είναι για τοπική χρήση
+  πάνω σε HTTP· δεν είναι έτοιμη για δημόσιο server.
+
+Μετά από αλλαγή στον κώδικα του `webapp/`:
+
+```powershell
+docker compose --profile mysql restart web
+```
+
+### Αναπαραγωγή του αρχείου δεδομένων
+
+Το `02_data.sql` βγαίνει από το backup της PostgreSQL. Για να το ξαναφτιάξετε (χρειάζεται να τρέχει το `hotel-db`):
+
+```powershell
+docker compose exec db sh /sql/mysql/tools/export_from_postgres.sh
+```
+
+```powershell
+docker compose cp db:/tmp/02_data.sql db/mysql/init/02_data.sql
+```
+
+### Καθαρή επανεκκίνηση της MySQL
+
+Σβήνει τη βάση MySQL (και τους χρήστες της web εφαρμογής) και τη φορτώνει ξανά από το `db/mysql/init/`. Η PostgreSQL δεν
+επηρεάζεται.
+
+```powershell
+docker compose --profile mysql rm -sf web phpmyadmin mysql
+```
+
+```powershell
+docker volume rm hotel-db_hotel-mysql-data
+```
+
+```powershell
+docker compose --profile mysql up -d --wait
+```
 
 ## Σταμάτημα και καθάρισμα
 

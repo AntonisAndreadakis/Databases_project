@@ -41,6 +41,76 @@ services:
     tty: true
     command: ["mvn", "-q", "compile", "exec:java"]
 
+  # ---------------------------------------------------------------------------------------------
+  # Εκδοχή MySQL (profile "mysql"): βάση, phpMyAdmin και web εφαρμογή με login.
+  #   docker compose --profile mysql up -d --wait
+  # ---------------------------------------------------------------------------------------------
+
+  # MySQL 8.4. Στην πρώτη εκκίνηση φορτώνει μόνη της το db/mysql/init/ (σχήμα, δεδομένα, routines).
+  mysql:
+    image: mysql:8.4
+    container_name: hotel-mysql
+    profiles: ["mysql"]
+    # Χωρίς binary log: δεν χρειάζεται τοπικά και επιτρέπει CREATE FUNCTION χωρίς επιπλέον δικαιώματα.
+    command: ["--skip-log-bin", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_as_cs"]
+    environment:
+      # Placeholders για τοπική χρήση (βλ. .env.example). ΔΕΝ είναι πραγματικοί κωδικοί.
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-local_dev_only}
+      MYSQL_DATABASE: hotel
+      MYSQL_USER: hotel_app
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-local_dev_only}
+    ports:
+      - "127.0.0.1:${HOTEL_MYSQL_PORT:-3307}:3306"
+    volumes:
+      - hotel-mysql-data:/var/lib/mysql
+      - ./db/mysql/init:/docker-entrypoint-initdb.d:ro
+      # Τα SQL ελέγχου (db/mysql/checks/...), μόνο για ανάγνωση, στο /sql.
+      - ./db/mysql:/sql:ro
+    healthcheck:
+      # Το TCP (127.0.0.1) ανοίγει μόνο αφού τελειώσει η αρχική φόρτωση.
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+
+  phpmyadmin:
+    image: phpmyadmin:5
+    container_name: hotel-phpmyadmin
+    profiles: ["mysql"]
+    environment:
+      PMA_HOST: mysql
+      UPLOAD_LIMIT: 64M
+    ports:
+      - "127.0.0.1:${HOTEL_PMA_PORT:-8081}:80"
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  # Η web εφαρμογή Java με login (webapp/). Μεταγλωττίζεται με Maven μέσα στο container.
+  web:
+    image: maven:3.9-eclipse-temurin-21
+    container_name: hotel-web
+    profiles: ["mysql"]
+    working_dir: /app
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/hotel
+      DB_USER: hotel_app
+      DB_PASSWORD: ${MYSQL_PASSWORD:-local_dev_only}
+      # Ο πρώτος χρήστης της εφαρμογής· δημιουργείται μόνο αν ο πίνακας app_user είναι άδειος.
+      APP_ADMIN_USER: ${APP_ADMIN_USER:-admin}
+      APP_ADMIN_PASSWORD: ${APP_ADMIN_PASSWORD:-local_dev_only}
+      PORT: "8080"
+    ports:
+      - "127.0.0.1:${HOTEL_WEB_PORT:-8080}:8080"
+    volumes:
+      - ./webapp:/app
+      - maven-cache:/root/.m2
+    depends_on:
+      mysql:
+        condition: service_healthy
+    command: ["mvn", "-q", "compile", "exec:java"]
+
 volumes:
   hotel-db-data:
+  hotel-mysql-data:
   maven-cache:

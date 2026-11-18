@@ -1,0 +1,148 @@
+erDiagram
+    Activity {
+        int idhotel PK, FK
+        time starttime PK
+        time endtime PK
+        int weekday PK
+        enum activitytype
+        int amka_employee_reserved FK
+    }
+    Manages {
+        int employeeid PK, FK
+        int idhotelbooking PK, FK
+    }
+    Participates {
+        int amka_person PK, FK
+        int idhotel PK, FK
+        int weekday PK, FK
+        time starttime PK, FK
+        time endtime PK, FK
+        enum participant_role
+    }
+    Transaction {
+        int idtransaction PK
+        int idhotelbooking PK
+        char action_tr
+        decimal amount
+        date made_date
+    }
+    app_user {
+        int id PK
+        varchar username UK
+        char password_hash
+        timestamp created_at
+    }
+    client {
+        int idClient PK, FK
+        varchar documentclient UK
+    }
+    creditcard {
+        varchar cardtype PK
+        varchar number PK
+        date expiration
+        varchar holder
+        int clientID FK
+    }
+    employee {
+        int idEmployee PK, FK
+        int idmanager FK
+        int hotelID FK
+        enum role
+    }
+    facility {
+        varchar nameFacility PK
+        varchar subtypeOf FK
+        varchar description
+        enum type
+    }
+    hotel {
+        int idHotel PK
+        varchar name
+        varchar stars
+        varchar address
+        varchar city
+        varchar country
+        varchar phone UK
+        varchar fax UK
+    }
+    hotelbooking {
+        int idhotelbooking PK
+        date reservationdate
+        date cancellationdate
+        float totalamount
+        int bookedbyclientID FK
+        tinyint payed
+        enum paymethod
+        enum status
+    }
+    hotelfacilities {
+        int idHotel PK, FK
+        varchar nameFacility PK, FK
+    }
+    person {
+        int idPerson PK
+        varchar fname
+        varchar lname
+        char sex
+        date dateofbirth
+        varchar address
+        varchar city
+        varchar country
+    }
+    room {
+        int idRoom PK
+        int number UK
+        float area
+        int idHotel FK
+        varchar roomtype FK
+    }
+    room_lock {
+        int idRoom PK, FK
+    }
+    roombooking {
+        int hotelbookingID PK, FK
+        int roomID PK, FK
+        int bookedforpersonID FK
+        date checkin
+        date checkout
+        float rate
+    }
+    roomfacilities {
+        int idRoom PK, FK
+        varchar nameFacility PK, FK
+    }
+    roomrate {
+        int idHotel PK, FK
+        varchar roomtype PK, FK
+        float rate
+        float discount
+    }
+    roomtype {
+        varchar typename PK
+        longblob samplephoto
+    }
+    Activity }o--o| employee : "amka_employee_reserved"
+    Activity }o--|| hotel : "idhotel"
+    Manages }o--|| employee : "employeeid"
+    Manages }o--|| hotelbooking : "idhotelbooking"
+    Participates }o--|| person : "amka_person"
+    Participates }o--|| Activity : "idhotel, weekday, starttime, endtime"
+    client |o--|| person : "idClient"
+    creditcard }o--|| client : "clientID"
+    employee }o--o| hotel : "hotelID"
+    employee |o--|| person : "idEmployee"
+    employee }o--o| employee : "idmanager"
+    facility }o--o| facility : "subtypeOf"
+    hotelbooking }o--o| client : "bookedbyclientID"
+    hotelfacilities }o--|| facility : "nameFacility"
+    hotelfacilities }o--|| hotel : "idHotel"
+    room }o--o| roomtype : "roomtype"
+    room }o--|| hotel : "idHotel"
+    room_lock |o--|| room : "idRoom"
+    roombooking }o--o| person : "bookedforpersonID"
+    roombooking }o--|| hotelbooking : "hotelbookingID"
+    roombooking }o--|| room : "roomID"
+    roomfacilities }o--|| room : "idRoom"
+    roomfacilities }o--|| facility : "nameFacility"
+    roomrate }o--|| hotel : "idHotel"
+    roomrate }o--|| roomtype : "roomtype"

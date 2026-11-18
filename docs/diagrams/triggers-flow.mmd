@@ -1,0 +1,42 @@
+flowchart LR
+    classDef tbl fill:transparent,stroke-width:2px
+    subgraph CALLS["Συναρτήσεις που αλλάζουν δεδομένα"]
+        F21["2_1_update_clients_and_cards"]
+        F22["2_2_insertRandomBookings"]
+        F62["6_2_weeklyPlan_update"]
+        F62B["6_2_book_room_day / 6_2_free_room_day"]
+        F11["1_1_fill_manages"]
+    end
+    subgraph T["Πίνακες με triggers"]
+        RB[("roombooking")]:::tbl
+        HB[("hotelbooking")]:::tbl
+        MA[("Manages")]:::tbl
+        PA[("Participates")]:::tbl
+    end
+    TR[("Transaction")]:::tbl
+    RR[("roomrate")]:::tbl
+    RL[("room_lock")]:::tbl
+    DEL[("person / client / room / roomtype / hotel")]:::tbl
+    PE[("person / client / creditcard")]:::tbl
+
+    F21 --> PE
+    F21 -- "στο delete" --> RB
+    F21 -- "στο delete" --> HB
+    F22 --> HB
+    F22 --> RB
+    F62 -- "rate, discount" --> RR
+    F62 --> F62B
+    F62B --> HB
+    F62B --> RB
+    F62B --> MA
+    F11 --> MA
+
+    RB -- "BEFORE: κλειδώνει το δωμάτιο" --> RL
+    DEL -- "BEFORE DELETE: σβήνει πρώτα τις κρατήσεις" --> RB
+    DEL -- "BEFORE DELETE" --> HB
+    RB -. "BEFORE: διαβάζει τιμή" .-> RR
+    RB -- "AFTER: 5_3_refresh_totalamount" --> HB
+    HB -- "AFTER: transaction_edit_*" --> TR
+    HB -. "BEFORE UPDATE: ψάχνει manager" .-> MA
+    MA -. "BEFORE: 1_1_check_employee_for_booking" .-> RB
+    PA -. "BEFORE: 1_1_check_person_for_participating" .-> RB

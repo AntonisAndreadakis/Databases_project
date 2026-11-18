@@ -1,3 +1,6 @@
 *.backup binary
 *.pdf binary
 *.class binary
+# Τρέχει μέσα σε Linux container: πάντα LF.
+*.sh text eol=lf
+*.png binary
