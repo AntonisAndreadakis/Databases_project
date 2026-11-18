@@ -22,8 +22,8 @@ SELECT * FROM "3_4_displayBookingStatus"(11) ORDER BY idhotelbooking LIMIT 5;
 SELECT * FROM "3_6_findSubtypesOfAFacility"('Business Services') ORDER BY facility;
 
 \echo
-\echo === 3.8 Ξενοδοχεία με διαθέσιμο δωμάτιο από κάθε κατηγορία ===
-SELECT * FROM "3_8_search_hotels_having_room_from_each_category"() ORDER BY hotel_id;
+\echo === 3.8 Ξενοδοχεία με διαθέσιμο δωμάτιο από κάθε κατηγορία (πλήθος) ===
+SELECT count(*) AS hotels FROM "3_8_search_hotels_having_room_from_each_category"();
 
 \echo
 \echo === 4.2 Μέση ηλικία πελατών που έκλεισαν δωμάτιο τύπου Studio ===
