@@ -4,3 +4,4 @@
 
 \ir 01_bugfixes.sql
 \ir 02_before_roombooking_update.sql
+\ir 03_weekly_plan_view.sql
