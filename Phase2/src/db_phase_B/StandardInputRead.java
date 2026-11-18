@@ -27,7 +27,8 @@ public class StandardInputRead {
 			if (line == null) {
 				throw new EndOfInputException();
 			}
-			return line.trim();
+			// Windows PowerShell may put a byte-order mark in front of piped input.
+			return line.replace("﻿", "").trim();
 		} catch (IOException e) {
 			throw new EndOfInputException();
 		}
