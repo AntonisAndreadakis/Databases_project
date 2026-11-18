@@ -1,2 +1,25 @@
 # Η αρχική αναφορά (PDF) περιέχει αριθμούς μητρώου· υπάρχει ως REPORT.md.
 Report.pdf
+
+# Μεταγλωττισμένα αρχεία Java
+bin/
+*.class
+
+# Μεταδεδομένα IDE (Eclipse, IntelliJ, VS Code)
+.classpath
+.project
+.settings/
+.idea/
+.vscode/
+*.iml
+
+# Τοπικές ρυθμίσεις και μυστικά
+.env
+
+# Έξοδοι ελέγχων και προσωρινά
+structure.txt
+*.log
+
+# Windows / OneDrive
+Thumbs.db
+desktop.ini

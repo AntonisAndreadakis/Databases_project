@@ -1,0 +1,29 @@
+# Τοπική PostgreSQL για το project ΠΛΗ303 (κρατήσεις ξενοδοχείων).
+# Μόνο για τοπική χρήση: η θύρα δένεται στο 127.0.0.1 και ο κωδικός είναι placeholder.
+name: hotel-db
+
+services:
+  db:
+    image: postgres:16
+    container_name: hotel-db
+    environment:
+      POSTGRES_USER: postgres
+      # Ορίστε άλλη τιμή σε αρχείο .env (βλ. .env.example). ΔΕΝ είναι πραγματικός κωδικός.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local_dev_only}
+      POSTGRES_DB: hotel
+    ports:
+      - "127.0.0.1:${HOTEL_DB_PORT:-5433}:5432"
+    volumes:
+      - hotel-db-data:/var/lib/postgresql/data
+      # Το backup της φάσης Β, μόνο για ανάγνωση, στο /backup μέσα στο container.
+      - ./Phase2:/backup:ro
+      # Τα SQL αρχεία ελέγχου (db/checks/...), μόνο για ανάγνωση, στο /sql.
+      - ./db:/sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d hotel"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  hotel-db-data:
