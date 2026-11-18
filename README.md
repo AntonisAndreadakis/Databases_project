@@ -212,7 +212,8 @@ docker compose exec db psql -U postgres -d hotel -f /sql/checks/02_examples.sql
 docker compose exec db psql -U postgres -d hotel -v ON_ERROR_STOP=1 --single-transaction -f /sql/fixes/apply.sql
 ```
 
-Τυπώνει πέντε αποτελέσματα `setval` και μερικά `CREATE FUNCTION` / `CREATE VIEW`, χωρίς `ERROR`.
+Τυπώνει πέντε αποτελέσματα `setval` και μερικά `CREATE FUNCTION` / `CREATE VIEW`, χωρίς `ERROR`. Την πρώτη φορά
+βγάζει και δύο `NOTICE: ... does not exist, skipping`, που είναι αναμενόμενα.
 
 Δοκιμές (τρέχουν μέσα σε transaction που κάνει ROLLBACK, δεν αφήνουν τίποτα στη βάση):
 
